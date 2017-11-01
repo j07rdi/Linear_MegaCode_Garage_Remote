@@ -16,20 +16,21 @@
    Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
  */
 /* libraries */
-#define __12f629
-#include <pic12f629.h>
+#define __12f635
+#include <pic12f635.h>
 #include <stdint.h>
 
 /* the peripherals connected to the pins */
-#define LED_ANODE   _GP0
-#define TX          _GP1
-#define SWITCH      _GP4
-#define LED_CATHODE _GP5
+#define LED_RED   	_GP5 			
+#define TX          _GP1 				
+#define SWITCH      _GP3 
+#define LED_GREEN	_GP4 
 
 /* simple functions */
 // note: LED and TX can not be enabled at the same time
-#define led_on() GPIO |= LED_ANODE;
-#define led_off() GPIO &= ~LED_ANODE;
+#define led_on() GPIO |= LED_GREEN;
+#define led_off() GPIO &= ~LED_GREEN;
+
 #define tx_on() GPIO |= TX;
 #define tx_off() GPIO &= ~TX;
 #define sleep() __asm sleep __endasm
@@ -45,7 +46,7 @@ volatile uint8_t phase = 0; // the 4 phases of the bit (2ms pause, 1ms pulse, 2m
  */
 uint16_t __at(_CONFIG) __CONFIG = _CPD_OFF & // no data code protect
                                   _CP_OFF & // no code proect
-                                  _BODEN_OFF & // no brown out detect
+                                  _BOREN_OFF & // no brown out detect
                                   _MCLRE_OFF & // disable master clear reset
                                   _PWRTE_ON & // enable power-up timeout
                                   _WDTE_OFF & // no watchdog
@@ -55,19 +56,19 @@ uint16_t __at(_CONFIG) __CONFIG = _CPD_OFF & // no data code protect
    a megacode is 3 bytes long (MSB of byte 1 is 1)
    append 0x00 to indicate end
 */
-// 0x2100 comes from the PIC12F629 Memory Programming document
-__code uint8_t __at(0x2100) EEPROM[] = {0xc9, 0x17, 0xc2, 0x00};
+// 0x2100 comes from the PIC12F635 Memory Programming document
+__code uint8_t __at(0x2100) EEPROM[] = {0x55, 0x14, 0xbc, 0x00};
 
 void timer_1ms() {
   TMR1ON = 0; // disable timer 1 (to write value safely)
-  TMR1L = 0x6e; // set time (tuned per hand)
+  TMR1L = 0x9b; // set time (tuned per hand)
   TMR1H = 0xff; // set time
   TMR1ON = 1; // start timer 1
 }
 
 void timer_2ms() {
   TMR1ON = 0; // disable timer 1 (to write value safely)
-  TMR1L = 0x22; // set time (tunef per hand)
+  TMR1L = 0x5d; // set time (tuned per hand)
   TMR1H = 0xff; // set time
   TMR1ON = 1; // start timer 1
 }
@@ -107,7 +108,7 @@ void megacode (void) {
     } else { // restart after 25th bit
       phase = 0xff; // phase will be 0 after incrementing
       if (transmit == -1) { // stop transmiting if requested
-        led_off();
+        led_on();
         transmit = 0; // stop transmiting
       }
       timer_1ms();
@@ -116,20 +117,21 @@ void megacode (void) {
   }
 }
 
-/* initialize micro-conroller */
+/* initialize micro-controller */
 void init (void) {
   TRISIO |= SWITCH; // switch is input
-  WPU |= SWITCH; // enable pull-up on switch
-  NOT_GPPU = 0; // enable global weak pull-up for inputs
-  TRISIO &= ~(LED_ANODE|LED_CATHODE|TX); // all other are outputs
-  GPIO &= ~(LED_ANODE|LED_CATHODE|TX); // clear output
+  WPUDA |= SWITCH; // enable pull-up on switch
+  NOT_RAPU = 0; // enable global weak pull-up for inputs
+  TRISIO &= ~(LED_RED|LED_GREEN|TX); // all other are outputs
+  GPIO &= ~(LED_RED|TX); // clear output
+  GPIO |= LED_GREEN;	// turn off led green
 }
 
 // funcion called on interrupts
 // interrupt 0 is only one on PIC12
 static void interrupt(void) __interrupt 0
 {
-  if (GPIF) { // pin state changed
+  if (RAIF) { // pin state changed
     if (GPIO&SWITCH) { // switch is released stop transmission
       if (transmit == 1) {
         transmit = -1; // stop transmitting after last transmition
@@ -141,7 +143,7 @@ static void interrupt(void) __interrupt 0
         megacode(); // start sending megacode
       }
     }
-    GPIF = 0; // clear interrupt
+    RAIF = 0; // clear interrupt
   }
   if (TMR1IF) { // timer 1 overflow
     megacode(); // continue sending megacode
@@ -154,8 +156,8 @@ void main (void)
 {
   init(); // configure micro-controller
 
-  IOC |= SWITCH; // enable interrupt for the switch
-  GPIE = 1; // enable interrupt on GPIO
+  IOCA |= SWITCH; // enable interrupt for the switch
+  RAIE = 1; // enable interrupt on GPIO
 
   T1CON = _T1CKPS1 | _T1CKPS0; // set prescaler to 8
   // 0 is per default
